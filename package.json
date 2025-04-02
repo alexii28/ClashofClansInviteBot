@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "clash-of-clans-api": "^0.6.3",
+    "dotenv": "^16.4.7"
+  }
+}
