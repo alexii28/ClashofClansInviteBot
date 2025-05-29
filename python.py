@@ -60,7 +60,7 @@ back_arrow = (0.143, 0.131)
 scroll_distance_members = (0.424, 0.790)
 
 second_clan = (0.688, 0.540)
-scroll_distance_clan = (0.308, 0.190)
+scroll_distance_clan = (0.308, 0.250)
 
 refresh_button = (0.506, 0.866)
 
