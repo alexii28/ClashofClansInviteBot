@@ -25,8 +25,29 @@ const clanTag = '#2RC8GRG80';
 client
   .clanByTag(clanTag)
   .then((clanData) => {
-    console.log('Clan Data:', clanData);
+    //console.log('Clan Data:', clanData);
   })
   .catch((error) => {
     console.error('Error fetching clan data:', error);
   });
+
+
+
+
+
+const { spawn } = require('child_process');
+
+const python = spawn('python3', ['-u', 'python.py']);
+
+python.stdout.on('data', (data) => {
+  console.log(`Python output: ${data.toString().trim()}`);
+});
+
+python.stderr.on('data', (data) => {
+  console.error(`Python error: ${data.toString()}`);
+});
+
+python.on('close', (code) => {
+  console.log(`Python script exited with code ${code}`);
+});
+
