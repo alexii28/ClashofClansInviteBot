@@ -46,7 +46,7 @@ abs_x = int(window.left + relative_x * window.width)
 abs_y = int(window.top + relative_y * window.height)
 
 # Coordinate Configurations
-player_profile = (0.040, 0.100)
+player_profile = (0.032, 0.089)
 join_clan_text = (0.586, 0.125)
 
 time.sleep(1) # give time for clans to load
@@ -60,7 +60,7 @@ back_arrow = (0.143, 0.131)
 scroll_distance_members = (0.424, 0.790)
 
 second_clan = (0.688, 0.540)
-scroll_distance_clan = (0.308, 0.250)
+scroll_distance_clan = (0.308, 0.256)
 
 refresh_button = (0.506, 0.866)
 
@@ -89,11 +89,11 @@ def moveMouse(coordinates, doClick):
     pyautogui.moveTo(x + random.randint(-5, 5), y + (random.randint(-5, 5)))
     if doClick:
         pyautogui.leftClick()
-    time.sleep(random.uniform(.05, .1))
+    time.sleep(random.uniform(0.5, .1))
     return
 
 def randomSleepFloat():
-    return random.uniform(.10, .2)
+    return random.uniform(.30, .4)
 
 
 # Global flag
@@ -120,7 +120,9 @@ time.sleep(5)
 if not debug_mode:
     #setup
     moveMouse(player_profile, True)
+    time.sleep(1)
     moveMouse(join_clan_text, True)
+    time.sleep(1)
     while running:
         
 
@@ -133,12 +135,13 @@ if not debug_mode:
 
             moveMouse(clan_coordinates, True)
             moveMouse(view_clan, True)
-
+            time.sleep(1)
 
             #start player loop
             for i in range(10):
                 moveMouse(first_member, True)
                 moveMouse(member_profile, True)
+                time.sleep(.1)
                 moveMouse(invite_text, True)
                 moveMouse(back_arrow, True)
 
