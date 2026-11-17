@@ -30,7 +30,10 @@ To redo specific points: `python3 python.py --calibrate --only invite_text,back_
 ```bash
 python3 python.py
 ```
-Start from the home village screen. To stop: press **Esc**, or move the mouse into the **top-left corner** of the screen.
+Start from the home village screen.
+
+**Quick test:** `python3 python.py --demo` invites 2 members in each of 2 clans (with one clan-list scroll), then stops.
+Customize with `--members N`, `--clans N` and `--rounds N`. Add `--no-invite` to test clicks and scrolling without sending invites. To stop: press **Esc**, or move the mouse into the **top-left corner** of the screen.
 
 The bot looks for a window named "BlueStacks". If it doesn't find it, run `python3 python.py --list-windows` and pass the name it shows: `python3 python.py --window "Name Here"` (on the `--calibrate` run too).
 

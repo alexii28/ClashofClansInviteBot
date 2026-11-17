@@ -5,6 +5,8 @@ Usage:
     python3 python.py --calibrate          # record click positions (do this first on a new machine)
     python3 python.py --calibrate --only invite_text,back_arrow   # redo specific points
     python3 python.py                      # run the bot
+    python3 python.py --demo               # quick test: 2 members x 2 clans, then stop
+    python3 python.py --members 3 --clans 4 --rounds 1 --no-invite   # custom test, no invites sent
     python3 python.py --list-windows       # macOS: show window/app names if the game isn't found
 
     python3 python.py --window "Clash of Clans"   # control a different app/emulator
@@ -303,7 +305,9 @@ def calibrate(only=None, delay=4):
     print(f"\nSaved to {COORDS_FILE}")
 
 
-def run():
+def run(members=10, clans=10, rounds=None, invite=True):
+    """members: per clan; clans: per round (scrolls the clan list after every 2);
+    rounds: list refreshes before stopping (None = forever); invite=False skips the Invite click."""
     global win, C
     C = load_coords()
     win = get_window()
@@ -311,6 +315,9 @@ def run():
     start_kill_switch()
 
     print(f"Controlling window: {win}")
+    print(f"Plan: {members} member(s) x {clans} clan(s) per round, "
+          f"{'forever' if rounds is None else f'{rounds} round(s)'}"
+          f"{'' if invite else ', NOT clicking Invite'}.")
     print("Get Clash of Clans on the home village screen. Starting in 5 seconds "
           "(Esc or mouse to top-left corner to stop).")
     time.sleep(5)
@@ -320,30 +327,40 @@ def run():
     move_mouse(C["join_clan_text"], True)
     time.sleep(1)
 
-    while True:
+    round_num = 0
+    while rounds is None or round_num < rounds:
+        round_num += 1
         win = get_window()  # pick up any window move/resize between rounds
 
-        for counter in range(10):
+        for counter in range(clans):
+            side = "right" if counter % 2 else "left"
+            print(f"[round {round_num}] clan {counter + 1}/{clans} ({side})")
             clan = C["second_clan"] if counter % 2 else C["first_clan"]
             move_mouse(clan, True)
             move_mouse(C["view_clan"], True)
             time.sleep(1)
 
-            for _ in range(10):
+            for m in range(members):
+                print(f"    member {m + 1}/{members}")
                 move_mouse(C["first_member"], True)
                 move_mouse(C["member_profile"], True)
                 time.sleep(0.1)
-                move_mouse(C["invite_text"], True)
+                if invite:
+                    move_mouse(C["invite_text"], True)
                 move_mouse(C["back_arrow"], True)
                 drag(C["first_member"], C["scroll_distance_members"])
 
             move_mouse(C["back_arrow"], True)
 
             if counter % 2:
+                print("    scrolling clan list")
                 drag(C["first_clan"], C["scroll_distance_clan"], extra=0.1)
 
-        move_mouse(C["refresh_button"], True)
-        time.sleep(1)
+        if rounds is None or round_num < rounds:
+            move_mouse(C["refresh_button"], True)
+            time.sleep(1)
+
+    print("Done.")
 
 
 def main():
@@ -354,6 +371,12 @@ def main():
     p.add_argument("--delay", type=int, default=4, help="seconds per point while calibrating")
     p.add_argument("--list-windows", action="store_true", help="print visible window names")
     p.add_argument("--window", help=f"app/window name to control (default: {WINDOW_NAME})")
+    p.add_argument("--demo", action="store_true",
+                   help="quick test: 2 members x 2 clans, 1 round (includes one clan-list scroll)")
+    p.add_argument("--members", type=int, help="members to invite per clan (default 10)")
+    p.add_argument("--clans", type=int, help="clans per round (default 10)")
+    p.add_argument("--rounds", type=int, help="rounds before stopping (default: forever)")
+    p.add_argument("--no-invite", action="store_true", help="go through the motions without clicking Invite")
     args = p.parse_args()
 
     if args.window:
@@ -366,7 +389,11 @@ def main():
             only = set(args.only.split(",")) if args.only else None
             calibrate(only, args.delay)
         else:
-            run()
+            members, clans, rounds = (2, 2, 1) if args.demo else (10, 10, None)
+            run(members=args.members or members,
+                clans=args.clans or clans,
+                rounds=args.rounds or rounds,
+                invite=not args.no_invite)
     except pyautogui.FailSafeException:
         print("Failsafe triggered (mouse in corner). Exiting.")
 
