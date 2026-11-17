@@ -227,18 +227,30 @@ def move_mouse(coordinates, do_click):
     time.sleep(random.uniform(0.1, 0.5))
 
 
-def drag(start, end, extra=0.0):
-    """Press at `start`, drag to `end`, pause, release (pause stops the scroll from flinging).
+def drag(start, end, extra=0.0, steps=12):
+    """Touch-style swipe from `start` to `end` that the game scrolls 1:1.
 
-    dragTo is required on macOS: a plain moveTo while the button is held sends
-    'mouse moved' instead of 'mouse dragged' events, so nothing would scroll.
+    Tested in BlueStacks Air: a fast press-and-move only scrolls ~1/3 of the distance,
+    because the game swallows the start of the motion as touch "slop". What works:
+    press, hold briefly, move in many small steps, pause (kills the fling), release.
+
+    dragTo (not moveTo) is required on macOS so the moves are sent as 'mouse dragged'
+    events, and button must be "left" explicitly (pyautogui's default "primary" crashes there).
     """
-    move_mouse(start, False)
-    x, y = relative_to_absolute(end)
+    sx, sy = relative_to_absolute(start)
+    ex, ey = relative_to_absolute(end)
+    pyautogui.moveTo(sx, sy)
     pyautogui.mouseDown(button="left")
-    # button must be "left" explicitly: dragTo's default "primary" crashes on macOS (pyautogui bug)
-    pyautogui.dragTo(x, y, duration=random_sleep_float() + extra, button="left", mouseDownUp=False)
-    time.sleep(random_sleep_float())
+    time.sleep(0.15)  # let the game register the touch before moving
+
+    step_delay = (random_sleep_float() + extra) / steps
+    for i in range(1, steps + 1):
+        t = i / steps
+        pyautogui.dragTo(round(sx + (ex - sx) * t), round(sy + (ey - sy) * t),
+                         button="left", mouseDownUp=False, _pause=False)
+        time.sleep(step_delay)
+
+    time.sleep(0.4)  # hold still so the list stops instead of flinging
     pyautogui.mouseUp(button="left")
 
 
