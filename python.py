@@ -235,10 +235,11 @@ def drag(start, end, extra=0.0):
     """
     move_mouse(start, False)
     x, y = relative_to_absolute(end)
-    pyautogui.mouseDown()
-    pyautogui.dragTo(x, y, duration=random_sleep_float() + extra, mouseDownUp=False)
+    pyautogui.mouseDown(button="left")
+    # button must be "left" explicitly: dragTo's default "primary" crashes on macOS (pyautogui bug)
+    pyautogui.dragTo(x, y, duration=random_sleep_float() + extra, button="left", mouseDownUp=False)
     time.sleep(random_sleep_float())
-    pyautogui.mouseUp()
+    pyautogui.mouseUp(button="left")
 
 
 # --------------------------------------------------------------------------- kill switch
