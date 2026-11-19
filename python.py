@@ -1,7 +1,12 @@
 """
 Clash of Clans Invite Bot — works on macOS and Windows.
 
-Usage:
+Usage (ADB mode: taps go straight into BlueStacks, your mouse stays free):
+    python3 python.py --adb --calibrate    # click each button on a screenshot (do this first)
+    python3 python.py --adb --demo         # quick test
+    python3 python.py --adb                # run the bot (stop with Ctrl+C)
+
+Usage (mouse mode: moves your real mouse):
     python3 python.py --calibrate          # record click positions (do this first on a new machine)
     python3 python.py --calibrate --only invite_text,back_arrow   # redo specific points
     python3 python.py                      # run the bot
@@ -15,10 +20,14 @@ Stop the bot: press Esc, or slam the mouse into the top-left corner of the scree
 """
 
 import argparse
+import glob
+import io
 import json
 import os
 import platform
 import random
+import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -180,6 +189,94 @@ def list_windows():
               f"{int(b['Width'])}x{int(b['Height'])}")
 
 
+# --------------------------------------------------------------------------- ADB backend
+
+def find_adb():
+    exe = shutil.which("adb")
+    if exe:
+        return exe
+    patterns = [
+        "/opt/homebrew/bin/adb",
+        "/Applications/BlueStacks*.app/Contents/MacOS/*adb*",
+        "/Applications/BlueStacks*.app/Contents/**/*adb",
+        r"C:\Program Files\BlueStacks*\HD-Adb.exe",
+    ]
+    for pat in patterns:
+        for path in glob.glob(pat, recursive=True):
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+    print("Couldn't find adb. Install it with:  brew install android-platform-tools")
+    sys.exit(1)
+
+
+class Adb:
+    """Sends taps/swipes straight into the Android system inside BlueStacks: no mouse involved."""
+
+    def __init__(self, serial):
+        self.exe = find_adb()
+        self.serial = serial
+        if serial and ":" in serial:
+            subprocess.run([self.exe, "connect", serial], capture_output=True, text=True, timeout=15)
+        state = self._run("get-state", check=False).strip()
+        if state != "device":
+            print(f"Can't reach BlueStacks over ADB at {serial} (adb says: {state or 'nothing'}).")
+            print("In BlueStacks: Settings -> Advanced -> turn on 'Android Debug Bridge (ADB)'.")
+            print("If it shows a different address than 127.0.0.1:5555, pass it with --adb-serial.")
+            sys.exit(1)
+        self.width, self.height = self.screen_size()
+        # Android 10+ has `input motionevent`, which lets us do a proper press-hold-move swipe.
+        self.has_motionevent = "motionevent" in self.shell("input", check=False)
+
+    def _cmd(self, *args):
+        return [self.exe] + (["-s", self.serial] if self.serial else []) + list(args)
+
+    def _run(self, *args, check=True):
+        r = subprocess.run(self._cmd(*args), capture_output=True, text=True, timeout=60)
+        if check and r.returncode != 0:
+            raise RuntimeError(f"adb {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
+        return r.stdout + r.stderr
+
+    def shell(self, command, check=True):
+        return self._run("shell", command, check=check)
+
+    def screencap(self):
+        r = subprocess.run(self._cmd("exec-out", "screencap", "-p"), capture_output=True, timeout=30)
+        if not r.stdout.startswith(b"\x89PNG"):
+            raise RuntimeError("adb screencap didn't return a PNG: " + r.stderr.decode(errors="replace"))
+        return r.stdout
+
+    def screen_size(self):
+        png = self.screencap()
+        return struct.unpack(">II", png[16:24])  # width, height from the PNG header
+
+    def to_px(self, rel, jitter=0):
+        x = round(rel[0] * self.width) + random.randint(-jitter, jitter)
+        y = round(rel[1] * self.height) + random.randint(-jitter, jitter)
+        return min(max(x, 0), self.width - 1), min(max(y, 0), self.height - 1)
+
+    def tap(self, rel):
+        x, y = self.to_px(rel, jitter=5)
+        self.shell(f"input tap {x} {y}")
+
+    def swipe(self, start, end, extra=0.0, steps=8):
+        """Same press, hold, move in steps, pause, release pattern the game needs (see drag())."""
+        sx, sy = self.to_px(start)
+        ex, ey = self.to_px(end)
+        if self.has_motionevent:
+            cmds = [f"input motionevent DOWN {sx} {sy}", "sleep 0.15"]
+            for i in range(1, steps + 1):
+                t = i / steps
+                cmds.append(f"input motionevent MOVE {round(sx + (ex - sx) * t)} {round(sy + (ey - sy) * t)}")
+            cmds += ["sleep 0.4", f"input motionevent UP {ex} {ey}"]
+            self.shell("; ".join(cmds))  # one round trip
+        else:
+            # Older Android: a slow swipe keeps the end velocity low so the list barely flings.
+            self.shell(f"input swipe {sx} {sy} {ex} {ey} {int((0.9 + extra) * 1000)}")
+
+
+ADB = None  # set by --adb
+
+
 # --------------------------------------------------------------------------- coordinates
 
 def load_all_coords():
@@ -196,12 +293,16 @@ def save_all_coords(data):
         json.dump(data, f, indent=2)
 
 
+def coords_key():
+    return "adb" if ADB else PLATFORM_KEY
+
+
 def load_coords():
-    coords = load_all_coords().get(PLATFORM_KEY, {})
+    coords = load_all_coords().get(coords_key(), {})
     missing = [k for k, _ in POINTS if k not in coords]
     if missing:
-        print(f"No calibrated positions for {PLATFORM_KEY} yet: {', '.join(missing)}")
-        print("Run `python3 python.py --calibrate` first.")
+        print(f"No calibrated positions for {coords_key()} yet: {', '.join(missing)}")
+        print(f"Run `python3 python.py {'--adb ' if ADB else ''}--calibrate` first.")
         sys.exit(1)
     return {k: tuple(v) for k, v in coords.items()}
 
@@ -222,6 +323,11 @@ def random_sleep_float():
 
 
 def move_mouse(coordinates, do_click):
+    if ADB:
+        if do_click:
+            ADB.tap(coordinates)
+        time.sleep(random.uniform(0.1, 0.5))
+        return
     x, y = relative_to_absolute(coordinates)
     pyautogui.moveTo(x + random.randint(-5, 5), y + random.randint(-5, 5))
     if do_click:
@@ -239,6 +345,9 @@ def drag(start, end, extra=0.0, steps=12):
     dragTo (not moveTo) is required on macOS so the moves are sent as 'mouse dragged'
     events, and button must be "left" explicitly (pyautogui's default "primary" crashes there).
     """
+    if ADB:
+        ADB.swipe(start, end, extra)
+        return
     sx, sy = relative_to_absolute(start)
     ex, ey = relative_to_absolute(end)
     pyautogui.moveTo(sx, sy)
@@ -277,7 +386,46 @@ def start_kill_switch():
 
 # --------------------------------------------------------------------------- modes
 
+def calibrate_adb(only=None):
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("Calibration in ADB mode needs matplotlib:  pip install matplotlib")
+        sys.exit(1)
+
+    data = load_all_coords()
+    plat = data.setdefault("adb", {})
+    points = [(k, d) for k, d in POINTS if not only or k in only]
+    print(f"Calibrating {len(points)} point(s) over ADB. BlueStacks screen: {ADB.width}x{ADB.height}")
+    print("For each one: get the game to the right screen in BlueStacks (do any clicks the step")
+    print("mentions there yourself), press Enter here, then click the spot on the screenshot.\n")
+
+    for key, desc in points:
+        print(f"[{key}] {desc}")
+        input("   Press Enter to grab a screenshot... ")
+        img = plt.imread(io.BytesIO(ADB.screencap()), format="png")
+        fig, ax = plt.subplots(figsize=(12, 12 * ADB.height / ADB.width))
+        ax.imshow(img)
+        ax.set_title(f"Click: {key}  ({desc})", fontsize=9)
+        ax.axis("off")
+        fig.tight_layout()
+        picked = plt.ginput(1, timeout=0)
+        plt.close(fig)
+        if not picked:
+            print("   skipped (no click)")
+            continue
+        x, y = picked[0]
+        rel = [round(x / ADB.width, 3), round(y / ADB.height, 3)]
+        plat[key] = rel
+        save_all_coords(data)
+        print(f"   captured {key} = {rel}")
+
+    print(f"\nSaved to {COORDS_FILE}")
+
+
 def calibrate(only=None, delay=4):
+    if ADB:
+        return calibrate_adb(only)
     global win
     win = get_window()
     activate(win)
@@ -310,16 +458,20 @@ def run(members=10, clans=10, rounds=None, invite=True):
     rounds: list refreshes before stopping (None = forever); invite=False skips the Invite click."""
     global win, C
     C = load_coords()
-    win = get_window()
-    activate(win)
-    start_kill_switch()
-
-    print(f"Controlling window: {win}")
+    if ADB:
+        print(f"Controlling BlueStacks over ADB ({ADB.serial}, {ADB.width}x{ADB.height}). "
+              "Your mouse is free. BlueStacks can be behind other windows.")
+        print("Stop with Ctrl+C in this Terminal.")
+    else:
+        win = get_window()
+        activate(win)
+        start_kill_switch()
+        print(f"Controlling window: {win}")
     print(f"Plan: {members} member(s) x {clans} clan(s) per round, "
           f"{'forever' if rounds is None else f'{rounds} round(s)'}"
           f"{'' if invite else ', NOT clicking Invite'}.")
-    print("Get Clash of Clans on the home village screen. Starting in 5 seconds "
-          "(Esc or mouse to top-left corner to stop).")
+    print("Get Clash of Clans on the home village screen. Starting in 5 seconds"
+          + ("." if ADB else " (Esc or mouse to top-left corner to stop)."))
     time.sleep(5)
 
     move_mouse(C["player_profile"], True)
@@ -330,7 +482,8 @@ def run(members=10, clans=10, rounds=None, invite=True):
     round_num = 0
     while rounds is None or round_num < rounds:
         round_num += 1
-        win = get_window()  # pick up any window move/resize between rounds
+        if not ADB:
+            win = get_window()  # pick up any window move/resize between rounds
 
         for counter in range(clans):
             side = "right" if counter % 2 else "left"
@@ -371,6 +524,10 @@ def main():
     p.add_argument("--delay", type=int, default=4, help="seconds per point while calibrating")
     p.add_argument("--list-windows", action="store_true", help="print visible window names")
     p.add_argument("--window", help=f"app/window name to control (default: {WINDOW_NAME})")
+    p.add_argument("--adb", action="store_true",
+                   help="control BlueStacks over ADB instead of the mouse (mouse stays free)")
+    p.add_argument("--adb-serial", default="127.0.0.1:5555",
+                   help="ADB address shown in BlueStacks' ADB setting (default 127.0.0.1:5555)")
     p.add_argument("--demo", action="store_true",
                    help="quick test: 2 members x 2 clans, 1 round (includes one clan-list scroll)")
     p.add_argument("--members", type=int, help="members to invite per clan (default 10)")
@@ -382,7 +539,10 @@ def main():
     if args.window:
         WINDOW_NAME = args.window
 
+    global ADB
     try:
+        if args.adb and not args.list_windows:
+            ADB = Adb(args.adb_serial)
         if args.list_windows:
             list_windows()
         elif args.calibrate:
@@ -396,6 +556,8 @@ def main():
                 invite=not args.no_invite)
     except pyautogui.FailSafeException:
         print("Failsafe triggered (mouse in corner). Exiting.")
+    except KeyboardInterrupt:
+        print("\nStopped.")
 
 
 if __name__ == "__main__":

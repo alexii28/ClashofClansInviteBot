@@ -1,7 +1,21 @@
 # ClashofClansInviteBot (WIP)
 Invite users to your clan automatically. Runs on macOS and Windows.
 
-## Setup (macOS)
+## ADB mode (recommended): your mouse stays free
+The bot sends taps and swipes straight into BlueStacks over ADB, so you can keep using your computer. BlueStacks can sit behind other windows, but don't quit it.
+
+1. Turn on ADB in BlueStacks: **Settings → Advanced → Android Debug Bridge (ADB)**. Note the address it shows (usually `127.0.0.1:5555`).
+2. Install adb: `brew install android-platform-tools`
+3. Install the Python packages: `pip install -r requirements.txt`
+4. Calibrate once: `python3 python.py --adb --calibrate`
+   For each button, get the game to the right screen in BlueStacks, press Enter, then click the spot on the screenshot that pops up.
+5. Test: `python3 python.py --adb --demo`, then run it for real with `python3 python.py --adb`. Stop with **Ctrl+C**.
+
+If BlueStacks shows a different ADB address, add `--adb-serial 127.0.0.1:XXXX` to every command.
+
+ADB mode has its own calibration: it saves under `"adb"` in `coords.json` as fractions of the Android screen, so resizing the BlueStacks window doesn't matter.
+
+## Mouse mode setup (macOS)
 1. Install **BlueStacks** (BlueStacks Air on Apple Silicon Macs), install Clash of Clans inside it, and open the game.
 2. In Terminal, from this folder:
    ```bash
