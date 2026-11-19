@@ -55,7 +55,7 @@ POINTS = [
     ("scroll_distance_clan", "Where a clan-list scroll drag should END (it starts on the first clan card)."),
     ("refresh_button", "The refresh button for the clan list. Then click the first clan."),
     ("view_clan", "The 'View Clan' button. Then click it."),
-    ("first_member", "The first member row in the member list."),
+    ("first_member", "The 1st member row, right after opening the clan page (it's at the very bottom; DON'T scroll first)."),
     ("scroll_distance_members", "Where a member-list scroll drag should END (it starts on the first member)."),
     ("member_profile", "Click the first member, then hover the 'Profile' button in the popup. Then click it."),
     ("invite_text", "The 'Invite' button on the player's profile."),
@@ -594,19 +594,23 @@ def run(members=10, clans=10, rounds=None, invite=True):
             clan = C["second_clan"] if counter % 2 else C["first_clan"]
             move_mouse(clan, True)
             move_mouse(C["view_clan"], True)
-            time.sleep(1)
+            time.sleep(1.5)  # clan page loads
 
             for m in range(members):
                 print(f"    member {m + 1}/{members}")
                 move_mouse(C["first_member"], True)
+                time.sleep(0.4)  # member popup opens
                 move_mouse(C["member_profile"], True)
-                time.sleep(0.1)
+                time.sleep(1.0)  # profile page loads
                 if invite:
                     move_mouse(C["invite_text"], True)
+                    time.sleep(0.3)
                 move_mouse(C["back_arrow"], True)
+                time.sleep(0.8)  # back on the clan page before scrolling
                 drag(C["first_member"], C["scroll_distance_members"])
 
             move_mouse(C["back_arrow"], True)
+            time.sleep(0.8)  # back on the clan list
 
             if counter % 2:
                 print("    scrolling clan list")
