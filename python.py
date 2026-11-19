@@ -240,14 +240,58 @@ class Adb:
         return self._run("shell", command, check=check)
 
     def screencap(self):
-        r = subprocess.run(self._cmd("exec-out", "screencap", "-p"), capture_output=True, timeout=30)
-        if not r.stdout.startswith(b"\x89PNG"):
-            raise RuntimeError("adb screencap didn't return a PNG: " + r.stderr.decode(errors="replace"))
-        return r.stdout
+        """PNG bytes of the Android screen. Tries the fast stream first, then a file-based fallback
+        (some BlueStacks builds close the exec-out stream with 'error: closed')."""
+        errors = []
+        for attempt in range(2):
+            r = subprocess.run(self._cmd("exec-out", "screencap", "-p"), capture_output=True, timeout=30)
+            if r.stdout.startswith(b"\x89PNG"):
+                return r.stdout
+            errors.append("exec-out: " + (r.stderr.decode(errors="replace").strip() or "no PNG"))
+
+            png = self._screencap_via_file(errors)
+            if png:
+                return png
+
+            if attempt == 0 and self.serial and ":" in self.serial:  # reconnect once and retry
+                subprocess.run([self.exe, "disconnect", self.serial], capture_output=True, timeout=15)
+                subprocess.run([self.exe, "connect", self.serial], capture_output=True, timeout=15)
+                time.sleep(1)
+        raise RuntimeError("Couldn't get a screenshot from BlueStacks over ADB:\n  " + "\n  ".join(errors))
+
+    def _screencap_via_file(self, errors):
+        import tempfile
+        remote = "/data/local/tmp/coc_bot_cap.png"
+        out = self.shell(f"screencap -p {remote}", check=False)
+        fd, local = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            r = subprocess.run(self._cmd("pull", remote, local), capture_output=True, text=True, timeout=30)
+            with open(local, "rb") as f:
+                data = f.read()
+            if data.startswith(b"\x89PNG"):
+                return data
+            errors.append("screencap+pull: " + (r.stderr.strip() or out.strip() or "no PNG"))
+        finally:
+            os.remove(local)
+        return None
 
     def screen_size(self):
-        png = self.screencap()
-        return struct.unpack(">II", png[16:24])  # width, height from the PNG header
+        try:
+            png = self.screencap()
+            return struct.unpack(">II", png[16:24])  # width, height from the PNG header
+        except RuntimeError as e:
+            # Running doesn't need screenshots: fall back to `wm size` + current rotation.
+            out = self.shell("wm size", check=False)
+            sizes = [line.split(":")[-1].strip() for line in out.splitlines() if "size" in line]
+            if not sizes:
+                raise RuntimeError(f"{e}\nAlso couldn't read `wm size`: {out.strip()}")
+            w, h = (int(v) for v in sizes[-1].split("x"))  # Override size wins if present
+            rot = self.shell("dumpsys input | grep -m1 SurfaceOrientation", check=False)
+            if any(f"SurfaceOrientation: {n}" in rot for n in (1, 3)):  # rotated 90°/270°
+                w, h = h, w
+            print(f"(screenshots failed, using wm size {w}x{h})")
+            return w, h
 
     def to_px(self, rel, jitter=0):
         x = round(rel[0] * self.width) + random.randint(-jitter, jitter)
