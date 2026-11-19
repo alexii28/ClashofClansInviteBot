@@ -9,7 +9,10 @@ The bot sends taps and swipes straight into BlueStacks over ADB, so you can keep
 3. Install the Python packages: `pip install -r requirements.txt`
 4. Calibrate once: `python3 python.py --adb --calibrate`
    For each button, get the game to the right screen in BlueStacks, press Enter, then click the spot on the screenshot that pops up.
-5. Test: `python3 python.py --adb --demo`, then run it for real with `python3 python.py --adb`. Stop with **Ctrl+C**.
+5. Tune the scrolling live (much easier than clicking it on a screenshot):
+   `python3 python.py --adb --tune-scroll members`, then `--tune-scroll clans`.
+   Enter swipes, `+`/`-` makes it longer/shorter, `u` swipes back, `s` saves.
+6. Test: `python3 python.py --adb --demo`, then run it for real with `python3 python.py --adb`. Stop with **Ctrl+C**.
 
 If BlueStacks shows a different ADB address, add `--adb-serial 127.0.0.1:XXXX` to every command.
 

@@ -497,6 +497,65 @@ def calibrate(only=None, delay=4):
     print(f"\nSaved to {COORDS_FILE}")
 
 
+def tune_scroll(which):
+    """Live, interactive tuning of one scroll distance: swipe, look at the game, nudge, repeat."""
+    global win
+    start_key, end_key, extra, goal = {
+        "members": ("first_member", "scroll_distance_members", 0.0,
+                    "the 2nd member should end up exactly where the 1st member was"),
+        "clans": ("first_clan", "scroll_distance_clan", 0.1,
+                  "the 2nd row of clans should end up exactly where the 1st row was"),
+    }[which]
+
+    data = load_all_coords()
+    plat = data.setdefault(coords_key(), {})
+    if start_key not in plat:
+        print(f"Calibrate {start_key} first:  python3 python.py {'--adb ' if ADB else ''}"
+              f"--calibrate --only {start_key}")
+        sys.exit(1)
+    if not ADB:
+        win = get_window()
+
+    start = tuple(plat[start_key])
+    # Start from the saved end point, or a sensible guess if there isn't one.
+    end_y = plat.get(end_key, [start[0], start[1] - (0.10 if which == "members" else 0.30)])[1]
+    original = end_y
+    swipes = []  # end points of swipes done, so undo reverses exactly what happened
+
+    print(f"Tuning the {which} scroll. Open the {which[:-1]} list in the game first.")
+    print(f"Goal: {goal}.\n")
+    print("  Enter = swipe        u = undo (swipe back)")
+    print("  +  / - = 1% longer / shorter      ++ / -- = 5% longer / shorter")
+    print("  s = save and quit    q = quit without saving\n")
+
+    while True:
+        dist = start[1] - end_y
+        cmd = input(f"[scroll distance {dist:.3f} of the screen height] > ").strip().lower()
+        end = (start[0], end_y)
+        if cmd == "":
+            drag(start, end, extra)
+            swipes.append(end)
+        elif cmd == "u":
+            if not swipes:
+                print("   nothing to undo")
+                continue
+            drag(swipes.pop(), start, extra)
+        elif cmd in ("+", "++", "-", "--"):
+            step = 0.05 if len(cmd) == 2 else 0.01
+            end_y = round(end_y - step if cmd[0] == "+" else end_y + step, 3)
+            print("   (press u then Enter to retry from the same spot)")
+        elif cmd == "s":
+            plat[end_key] = [start[0], end_y]
+            save_all_coords(data)
+            print(f"Saved {end_key} = {plat[end_key]} (was distance {start[1] - original:.3f})")
+            return
+        elif cmd == "q":
+            print("Not saved.")
+            return
+        else:
+            print("   ?  Enter, u, +, -, ++, --, s or q")
+
+
 def run(members=10, clans=10, rounds=None, invite=True):
     """members: per clan; clans: per round (scrolls the clan list after every 2);
     rounds: list refreshes before stopping (None = forever); invite=False skips the Invite click."""
@@ -577,6 +636,8 @@ def main():
     p.add_argument("--members", type=int, help="members to invite per clan (default 10)")
     p.add_argument("--clans", type=int, help="clans per round (default 10)")
     p.add_argument("--rounds", type=int, help="rounds before stopping (default: forever)")
+    p.add_argument("--tune-scroll", choices=["members", "clans"],
+                   help="live-tune a scroll distance: swipe, watch, nudge with +/-, save")
     p.add_argument("--no-invite", action="store_true", help="go through the motions without clicking Invite")
     args = p.parse_args()
 
@@ -589,6 +650,8 @@ def main():
             ADB = Adb(args.adb_serial)
         if args.list_windows:
             list_windows()
+        elif args.tune_scroll:
+            tune_scroll(args.tune_scroll)
         elif args.calibrate:
             only = set(args.only.split(",")) if args.only else None
             calibrate(only, args.delay)
